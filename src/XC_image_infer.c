@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "xmedia_cl.h"
+#include "XC_common_datatype.h"
 #include "xmedia_mmz.h"
 #include "xmedia_sys.h"
 
@@ -16,40 +18,40 @@
 #define XC_ALIGN_FUNC(A, ALIGN) ((((A) % (ALIGN)) == 0) ? (A) : ((A) + (ALIGN) - ((A) % (ALIGN))))
 
 typedef struct {
-    XC_s32 reg_index;
-    XC_s32 cls_index;
-    XC_u32 height;
-    XC_u32 width;
-    XC_u32 stride;
+    XC_S32 reg_index;
+    XC_S32 cls_index;
+    XC_U32 height;
+    XC_U32 width;
+    XC_U32 stride;
 } detect_level_info;
 
 struct XC_image_infer_handle {
     XC_image_infer_config config;
-    XC_cl_context context;
-    XC_cl_device_id *devices;
-    XC_cl_u32 num_devices;
-    XC_cl_graph graph;
-    XC_cl_tensor_info_inout input;
-    XC_cl_tensor_info_inout output;
-    XC_cl_tensor *input_tensor_arr;
-    XC_cl_tensor *output_tensor_arr;
-    XC_u64 work_phy_addr;
-    XC_u64 weight_phy_addr;
-    XC_u64 input_phy_addr;
-    XC_u64 output_phy_addr;
+    xmedia_cl_context context;
+    xmedia_cl_device_id *devices;
+    xmedia_cl_u32 num_devices;
+    xmedia_cl_graph graph;
+    xmedia_cl_tensor_info_inout input;
+    xmedia_cl_tensor_info_inout output;
+    xmedia_cl_tensor *input_tensor_arr;
+    xmedia_cl_tensor *output_tensor_arr;
+    XC_U64 work_phy_addr;
+    XC_U64 weight_phy_addr;
+    XC_U64 input_phy_addr;
+    XC_U64 output_phy_addr;
     void *work_vir_addr;
     void *weight_vir_addr;
     void *input_vir_addr;
     void *output_vir_addr;
-    XC_cl_u32 worksize;
-    XC_cl_u32 weightsize;
-    XC_u32 inputsize;
-    XC_u32 outputsize;
+    xmedia_cl_u32 worksize;
+    xmedia_cl_u32 weightsize;
+    XC_U32 inputsize;
+    XC_U32 outputsize;
     XC_bool sys_inited;
     XC_bool cl_inited;
 };
 
-static XC_u32 get_pixel_bytes(XC_image_format pixel_format)
+static XC_U32 get_pixel_bytes(XC_image_format pixel_format)
 {
     switch (pixel_format) {
         case XC_IMAGE_FORMAT_RGB888:
@@ -60,7 +62,7 @@ static XC_u32 get_pixel_bytes(XC_image_format pixel_format)
     }
 }
 
-static XC_s32 mmz_alloc(XC_u64 *phy_addr, void **vir_addr, XC_u32 size)
+static XC_S32 mmz_alloc(XC_U64 *phy_addr, void **vir_addr, XC_U32 size)
 {
     *phy_addr = XC_mmz_alloc(NULL, "xmimg", size);
     if (*phy_addr == 0) {
@@ -77,7 +79,7 @@ static XC_s32 mmz_alloc(XC_u64 *phy_addr, void **vir_addr, XC_u32 size)
     return 0;
 }
 
-static XC_void mmz_release(XC_u64 phy_addr, void *vir_addr)
+static XC_void mmz_release(XC_U64 phy_addr, void *vir_addr)
 {
     if (vir_addr != NULL) {
         XC_mmz_unmap(vir_addr);
@@ -87,15 +89,15 @@ static XC_void mmz_release(XC_u64 phy_addr, void *vir_addr)
     }
 }
 
-static XC_s32 input_img_to_chw(const XC_input_img *input_img, XC_u8 *tensor_buffer,
-    XC_u32 dst_width, XC_u32 dst_height)
+static XC_S32 input_img_to_chw(const XC_input_img *input_img, XC_U8 *tensor_buffer,
+    XC_U32 dst_width, XC_U32 dst_height)
 {
-    XC_u32 bytes_per_pixel;
-    XC_u32 map_size;
-    XC_u32 hw;
-    XC_u8 *frame_vir_addr;
-    XC_u32 x;
-    XC_u32 y;
+    XC_U32 bytes_per_pixel;
+    XC_U32 map_size;
+    XC_U32 hw;
+    XC_U8 *frame_vir_addr;
+    XC_U32 x;
+    XC_U32 y;
 
     if (input_img == NULL || tensor_buffer == NULL) {
         return -1;
@@ -116,7 +118,7 @@ static XC_s32 input_img_to_chw(const XC_input_img *input_img, XC_u8 *tensor_buff
     }
 
     map_size = input_img->stride * input_img->height;
-    frame_vir_addr = (XC_u8 *)XC_mmz_map(input_img->phy_addr, map_size, 0);
+    frame_vir_addr = (XC_U8 *)XC_mmz_map(input_img->phy_addr, map_size, 0);
     if (frame_vir_addr == NULL) {
         return -1;
     }
@@ -124,10 +126,10 @@ static XC_s32 input_img_to_chw(const XC_input_img *input_img, XC_u8 *tensor_buff
     hw = dst_width * dst_height;
 
     for (y = 0; y < dst_height; y++) {
-        const XC_u8 *src_row = frame_vir_addr + y * input_img->stride;
+        const XC_U8 *src_row = frame_vir_addr + y * input_img->stride;
         for (x = 0; x < dst_width; x++) {
-            const XC_u8 *pixel = src_row + x * bytes_per_pixel;
-            XC_u32 dst_index = y * dst_width + x;
+            const XC_U8 *pixel = src_row + x * bytes_per_pixel;
+            XC_U32 dst_index = y * dst_width + x;
 
             if (input_img->pixel_format == XC_IMAGE_FORMAT_RGB888) {
                 tensor_buffer[dst_index] = pixel[0];
@@ -145,27 +147,27 @@ static XC_s32 input_img_to_chw(const XC_input_img *input_img, XC_u8 *tensor_buff
     return 0;
 }
 
-static XC_u32 get_tensor_bytes_per_element(const XC_cl_tensor *tensor)
+static XC_U32 get_tensor_bytes_per_element(const xmedia_cl_tensor *tensor)
 {
     if (tensor->shape.type == XMEDIA_CL_FP32) {
-        return sizeof(XC_float);
+        return sizeof(XC_FLOAT);
     }
     if (tensor->shape.type == XMEDIA_CL_UINT8) {
-        return sizeof(XC_u8);
+        return sizeof(XC_U8);
     }
     if (tensor->shape.type == XMEDIA_CL_INT8) {
-        return sizeof(XC_s8);
+        return sizeof(XC_S8);
     }
 
     return 0;
 }
 
-static XC_u32 get_tensor_physical_width(const XC_cl_tensor *tensor)
+static XC_U32 get_tensor_physical_width(const xmedia_cl_tensor *tensor)
 {
-    XC_u32 channels = tensor->shape.dims[1];
-    XC_u32 height = tensor->shape.dims[2];
-    XC_u32 logical_width = tensor->shape.dims[3];
-    XC_u32 bytes_per_elem = get_tensor_bytes_per_element(tensor);
+    XC_U32 channels = tensor->shape.dims[1];
+    XC_U32 height = tensor->shape.dims[2];
+    XC_U32 logical_width = tensor->shape.dims[3];
+    XC_U32 bytes_per_elem = get_tensor_bytes_per_element(tensor);
 
     if (channels == 0 || height == 0 || bytes_per_elem == 0 || tensor->size == 0) {
         return logical_width;
@@ -174,43 +176,43 @@ static XC_u32 get_tensor_physical_width(const XC_cl_tensor *tensor)
     return tensor->size / (channels * height * bytes_per_elem);
 }
 
-static XC_float tensor_value_to_float(const XC_cl_tensor *tensor, XC_u32 channel,
-    XC_u32 y, XC_u32 x)
+static XC_FLOAT tensor_value_to_float(const xmedia_cl_tensor *tensor, XC_U32 channel,
+    XC_U32 y, XC_U32 x)
 {
-    XC_u32 height = tensor->shape.dims[2];
-    XC_u32 width = get_tensor_physical_width(tensor);
-    XC_u32 index = (channel * height + y) * width + x;
+    XC_U32 height = tensor->shape.dims[2];
+    XC_U32 width = get_tensor_physical_width(tensor);
+    XC_U32 index = (channel * height + y) * width + x;
 
     if (tensor->shape.type == XMEDIA_CL_FP32) {
-        const XC_float *data = (const XC_float *)tensor->addr;
+        const XC_FLOAT *data = (const XC_FLOAT *)tensor->addr;
         return data[index];
     }
 
     if (tensor->shape.type == XMEDIA_CL_UINT8) {
-        const XC_u8 *data = (const XC_u8 *)tensor->addr;
-        return ((XC_float)data[index] - tensor->quant.zp) * tensor->quant.scale;
+        const XC_U8 *data = (const XC_U8 *)tensor->addr;
+        return ((XC_FLOAT)data[index] - tensor->quant.zp) * tensor->quant.scale;
     }
 
     if (tensor->shape.type == XMEDIA_CL_INT8) {
-        const XC_s8 *data = (const XC_s8 *)tensor->addr;
-        return ((XC_float)data[index] - tensor->quant.zp) * tensor->quant.scale;
+        const XC_S8 *data = (const XC_S8 *)tensor->addr;
+        return ((XC_FLOAT)data[index] - tensor->quant.zp) * tensor->quant.scale;
     }
 
     return 0.0f;
 }
 
-static XC_float sigmoidf_safe(XC_float x)
+static XC_FLOAT sigmoidf_safe(XC_FLOAT x)
 {
     if (x >= 0.0f) {
-        XC_float z = expf(-x);
+        XC_FLOAT z = expf(-x);
         return 1.0f / (1.0f + z);
     }
 
-    XC_float z = expf(x);
+    XC_FLOAT z = expf(x);
     return z / (1.0f + z);
 }
 
-static XC_float clampf_safe(XC_float value, XC_float min_value, XC_float max_value)
+static XC_FLOAT clampf_safe(XC_FLOAT value, XC_FLOAT min_value, XC_FLOAT max_value)
 {
     if (value < min_value) {
         return min_value;
@@ -221,15 +223,15 @@ static XC_float clampf_safe(XC_float value, XC_float min_value, XC_float max_val
     return value;
 }
 
-static XC_float decode_dfl_distance(const XC_cl_tensor *reg_tensor,
-    XC_u32 side_index, XC_u32 y, XC_u32 x, XC_u32 stride)
+static XC_FLOAT decode_dfl_distance(const xmedia_cl_tensor *reg_tensor,
+    XC_U32 side_index, XC_U32 y, XC_U32 x, XC_U32 stride)
 {
-    XC_float logits[XC_DFL_BINS];
-    XC_float max_logit;
-    XC_float sum = 0.0f;
-    XC_float expectation = 0.0f;
-    XC_u32 k;
-    XC_u32 base_channel = side_index * XC_DFL_BINS;
+    XC_FLOAT logits[XC_DFL_BINS];
+    XC_FLOAT max_logit;
+    XC_FLOAT sum = 0.0f;
+    XC_FLOAT expectation = 0.0f;
+    XC_U32 k;
+    XC_U32 base_channel = side_index * XC_DFL_BINS;
 
     max_logit = tensor_value_to_float(reg_tensor, base_channel, y, x);
     for (k = 0; k < XC_DFL_BINS; k++) {
@@ -249,13 +251,13 @@ static XC_float decode_dfl_distance(const XC_cl_tensor *reg_tensor,
     }
 
     for (k = 0; k < XC_DFL_BINS; k++) {
-        expectation += ((XC_float)k) * (logits[k] / sum);
+        expectation += ((XC_FLOAT)k) * (logits[k] / sum);
     }
 
     return expectation * stride;
 }
 
-static XC_s32 compare_candidate_desc(const void *left, const void *right)
+static XC_S32 compare_candidate_desc(const void *left, const void *right)
 {
     const XC_detect_box *a = (const XC_detect_box *)left;
     const XC_detect_box *b = (const XC_detect_box *)right;
@@ -269,18 +271,18 @@ static XC_s32 compare_candidate_desc(const void *left, const void *right)
     return 0;
 }
 
-static XC_float compute_iou(const XC_detect_box *a, const XC_detect_box *b)
+static XC_FLOAT compute_iou(const XC_detect_box *a, const XC_detect_box *b)
 {
-    XC_float xx1 = a->x1 > b->x1 ? a->x1 : b->x1;
-    XC_float yy1 = a->y1 > b->y1 ? a->y1 : b->y1;
-    XC_float xx2 = a->x2 < b->x2 ? a->x2 : b->x2;
-    XC_float yy2 = a->y2 < b->y2 ? a->y2 : b->y2;
-    XC_float inter_w = xx2 - xx1;
-    XC_float inter_h = yy2 - yy1;
-    XC_float inter_area;
-    XC_float area_a;
-    XC_float area_b;
-    XC_float union_area;
+    XC_FLOAT xx1 = a->x1 > b->x1 ? a->x1 : b->x1;
+    XC_FLOAT yy1 = a->y1 > b->y1 ? a->y1 : b->y1;
+    XC_FLOAT xx2 = a->x2 < b->x2 ? a->x2 : b->x2;
+    XC_FLOAT yy2 = a->y2 < b->y2 ? a->y2 : b->y2;
+    XC_FLOAT inter_w = xx2 - xx1;
+    XC_FLOAT inter_h = yy2 - yy1;
+    XC_FLOAT inter_area;
+    XC_FLOAT area_a;
+    XC_FLOAT area_b;
+    XC_FLOAT union_area;
 
     if (inter_w <= 0.0f || inter_h <= 0.0f) {
         return 0.0f;
@@ -298,15 +300,15 @@ static XC_float compute_iou(const XC_detect_box *a, const XC_detect_box *b)
     return inter_area / union_area;
 }
 
-static XC_u32 apply_nms(XC_detect_box *candidates, XC_u32 candidate_count,
-    XC_float iou_thresh)
+static XC_U32 apply_nms(XC_detect_box *candidates, XC_U32 candidate_count,
+    XC_FLOAT iou_thresh)
 {
-    XC_u8 *suppressed;
-    XC_u32 keep_count = 0;
-    XC_u32 i;
-    XC_u32 j;
+    XC_U8 *suppressed;
+    XC_U32 keep_count = 0;
+    XC_U32 i;
+    XC_U32 j;
 
-    suppressed = (XC_u8 *)calloc(candidate_count, sizeof(XC_u8));
+    suppressed = (XC_U8 *)calloc(candidate_count, sizeof(XC_U8));
     if (suppressed == NULL) {
         return candidate_count;
     }
@@ -339,24 +341,24 @@ static XC_u32 apply_nms(XC_detect_box *candidates, XC_u32 candidate_count,
     return keep_count;
 }
 
-static XC_s32 collect_detect_levels(const XC_image_infer_handle *handle,
-    detect_level_info *levels, XC_u32 max_levels)
+static XC_S32 collect_detect_levels(const XC_image_infer_handle *handle,
+    detect_level_info *levels, XC_U32 max_levels)
 {
-    XC_u32 i;
-    XC_u32 level_count = 0;
-    XC_cl_tensor_info_inout *output = (XC_cl_tensor_info_inout *)&handle->output;
+    XC_U32 i;
+    XC_U32 level_count = 0;
+    xmedia_cl_tensor_info_inout *output = (xmedia_cl_tensor_info_inout *)&handle->output;
 
     for (i = 0; i < output->num; i++) {
-        XC_cl_tensor *tensor = &output->tensor[i];
-        XC_u32 channels = tensor->shape.dims[1];
-        XC_u32 height = tensor->shape.dims[2];
-        XC_u32 width = tensor->shape.dims[3];
-        XC_u32 level_index;
-        XC_s32 matched = -1;
+        xmedia_cl_tensor *tensor = &output->tensor[i];
+        XC_U32 channels = tensor->shape.dims[1];
+        XC_U32 height = tensor->shape.dims[2];
+        XC_U32 width = tensor->shape.dims[3];
+        XC_U32 level_index;
+        XC_S32 matched = -1;
 
         for (level_index = 0; level_index < level_count; level_index++) {
             if (levels[level_index].height == height && levels[level_index].width == width) {
-                matched = (XC_s32)level_index;
+                matched = (XC_S32)level_index;
                 break;
             }
         }
@@ -365,7 +367,7 @@ static XC_s32 collect_detect_levels(const XC_image_infer_handle *handle,
             if (level_count >= max_levels) {
                 continue;
             }
-            matched = (XC_s32)level_count;
+            matched = (XC_S32)level_count;
             levels[level_count].reg_index = -1;
             levels[level_count].cls_index = -1;
             levels[level_count].height = height;
@@ -375,23 +377,23 @@ static XC_s32 collect_detect_levels(const XC_image_infer_handle *handle,
         }
 
         if (channels == XC_DFL_BINS * 4) {
-            levels[matched].reg_index = (XC_s32)i;
+            levels[matched].reg_index = (XC_S32)i;
         } else if (channels == XC_YOLO_CLASS_NUM) {
-            levels[matched].cls_index = (XC_s32)i;
+            levels[matched].cls_index = (XC_S32)i;
         }
     }
 
-    return (XC_s32)level_count;
+    return (XC_S32)level_count;
 }
 
-static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
+static XC_S32 collect_candidate_boxes(const XC_image_infer_handle *handle,
     XC_detect_result *result)
 {
     detect_level_info levels[3];
     XC_detect_box candidates[XC_MAX_CANDIDATES];
-    XC_u32 candidate_count = 0;
-    XC_s32 level_count;
-    XC_s32 level_index;
+    XC_U32 candidate_count = 0;
+    XC_S32 level_count;
+    XC_S32 level_index;
 
     memset(levels, 0, sizeof(levels));
     level_count = collect_detect_levels(handle, levels, 3);
@@ -403,10 +405,10 @@ static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
 
     for (level_index = 0; level_index < level_count; level_index++) {
         detect_level_info *level = &levels[level_index];
-        XC_cl_tensor *reg_tensor;
-        XC_cl_tensor *cls_tensor;
-        XC_u32 y;
-        XC_u32 x;
+        xmedia_cl_tensor *reg_tensor;
+        xmedia_cl_tensor *cls_tensor;
+        XC_U32 y;
+        XC_U32 x;
 
         if (level->reg_index < 0 || level->cls_index < 0) {
             continue;
@@ -417,33 +419,33 @@ static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
 
         for (y = 0; y < level->height; y++) {
             for (x = 0; x < level->width; x++) {
-                XC_float best_logit = tensor_value_to_float(cls_tensor, 0, y, x);
-                XC_s32 best_class = 0;
-                XC_float score;
-                XC_float left;
-                XC_float top;
-                XC_float right;
-                XC_float bottom;
-                XC_float center_x;
-                XC_float center_y;
-                XC_float scale_x;
-                XC_float scale_y;
-                XC_float x1;
-                XC_float y1;
-                XC_float x2;
-                XC_float y2;
-                XC_u32 c;
+                XC_FLOAT best_logit = tensor_value_to_float(cls_tensor, 0, y, x);
+                XC_S32 best_class = 0;
+                XC_FLOAT score;
+                XC_FLOAT left;
+                XC_FLOAT top;
+                XC_FLOAT right;
+                XC_FLOAT bottom;
+                XC_FLOAT center_x;
+                XC_FLOAT center_y;
+                XC_FLOAT scale_x;
+                XC_FLOAT scale_y;
+                XC_FLOAT x1;
+                XC_FLOAT y1;
+                XC_FLOAT x2;
+                XC_FLOAT y2;
+                XC_U32 c;
 
                 for (c = 1; c < XC_YOLO_CLASS_NUM; c++) {
-                    XC_float logit = tensor_value_to_float(cls_tensor, c, y, x);
+                    XC_FLOAT logit = tensor_value_to_float(cls_tensor, c, y, x);
                     if (logit > best_logit) {
                         best_logit = logit;
-                        best_class = (XC_s32)c;
+                        best_class = (XC_S32)c;
                     }
                 }
 
                 score = sigmoidf_safe(best_logit);
-                if (best_class != (XC_s32)handle->config.person_class_id ||
+                if (best_class != (XC_S32)handle->config.person_class_id ||
                     score < handle->config.score_thresh) {
                     continue;
                 }
@@ -453,20 +455,20 @@ static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
                 right = decode_dfl_distance(reg_tensor, 2, y, x, level->stride);
                 bottom = decode_dfl_distance(reg_tensor, 3, y, x, level->stride);
 
-                center_x = ((XC_float)x + 0.5f) * level->stride;
-                center_y = ((XC_float)y + 0.5f) * level->stride;
+                center_x = ((XC_FLOAT)x + 0.5f) * level->stride;
+                center_y = ((XC_FLOAT)y + 0.5f) * level->stride;
                 scale_x = level->width == 0 ? 1.0f :
-                    ((XC_float)handle->config.image_width / (level->width * level->stride));
+                    ((XC_FLOAT)handle->config.image_width / (level->width * level->stride));
                 scale_y = 1.0f;
 
                 x1 = clampf_safe((center_x - left) * scale_x, 0.0f,
-                    (XC_float)(handle->config.image_width - 1));
+                    (XC_FLOAT)(handle->config.image_width - 1));
                 y1 = clampf_safe((center_y - top) * scale_y, 0.0f,
-                    (XC_float)(handle->config.image_height - 1));
+                    (XC_FLOAT)(handle->config.image_height - 1));
                 x2 = clampf_safe((center_x + right) * scale_x, 0.0f,
-                    (XC_float)(handle->config.image_width - 1));
+                    (XC_FLOAT)(handle->config.image_width - 1));
                 y2 = clampf_safe((center_y + bottom) * scale_y, 0.0f,
-                    (XC_float)(handle->config.image_height - 1));
+                    (XC_FLOAT)(handle->config.image_height - 1));
 
                 if ((x2 <= x1) || (y2 <= y1) || candidate_count >= XC_MAX_CANDIDATES) {
                     continue;
@@ -479,7 +481,7 @@ static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
                 candidates[candidate_count].x2 = x2;
                 candidates[candidate_count].y2 = y2;
                 candidates[candidate_count].stride = level->stride;
-                candidates[candidate_count].level = (XC_u32)level_index;
+                candidates[candidate_count].level = (XC_U32)level_index;
                 candidate_count++;
             }
         }
@@ -505,13 +507,13 @@ static XC_s32 collect_candidate_boxes(const XC_image_infer_handle *handle,
     return 0;
 }
 
-static XC_s32 assign_tensor_addrs(XC_cl_tensor_info_inout *tensor_info, void *base_addr)
+static XC_S32 assign_tensor_addrs(xmedia_cl_tensor_info_inout *tensor_info, void *base_addr)
 {
-    XC_s32 i;
+    XC_S32 i;
 
-    for (i = 0; i < (XC_s32)tensor_info->num; i++) {
+    for (i = 0; i < (XC_S32)tensor_info->num; i++) {
         if (i > 0) {
-            tensor_info->tensor[i].addr = (XC_u8 *)tensor_info->tensor[i - 1].addr +
+            tensor_info->tensor[i].addr = (XC_U8 *)tensor_info->tensor[i - 1].addr +
                 XC_ALIGN_FUNC(tensor_info->tensor[i - 1].size, XC_ALIGN_BYTE);
         } else {
             tensor_info->tensor[i].addr = base_addr;
@@ -537,13 +539,13 @@ static XC_void fill_default_config(XC_image_infer_config *config)
     }
 }
 
-XC_s32 XC_image_infer_init(const XC_image_infer_config *config,
+XC_S32 XC_image_infer_init(const XC_image_infer_config *config,
     XC_image_infer_handle **handle)
 {
     XC_image_infer_handle *ctx;
-    XC_cl_s32 err_code = 0;
-    XC_s32 ret;
-    XC_s32 i;
+    xmedia_cl_s32 err_code = 0;
+    XC_S32 ret;
+    XC_S32 i;
 
     if (config == NULL || handle == NULL || config->model_path == NULL) {
         return -1;
@@ -558,45 +560,45 @@ XC_s32 XC_image_infer_init(const XC_image_infer_config *config,
     ctx->config = *config;
     fill_default_config(&ctx->config);
 
-    ret = XC_sys_init(NULL);
+    ret = XC_Sys_init(NULL);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
     ctx->sys_inited = XMEDIA_TRUE;
 
-    ret = XC_cl_init();
+    ret = xmedia_cl_init();
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
     ctx->cl_inited = XMEDIA_TRUE;
 
-    ret = XC_cl_get_device_ids(XMEDIA_CL_DEVICE_ALL, NULL, &ctx->num_devices);
+    ret = xmedia_cl_get_device_ids(XMEDIA_CL_DEVICE_ALL, NULL, &ctx->num_devices);
     if (ret != 0 || ctx->num_devices == 0) {
         XC_image_infer_destroy(ctx);
         return ret != 0 ? ret : -1;
     }
 
-    ctx->devices = (XC_cl_device_id *)calloc(ctx->num_devices, sizeof(XC_cl_device_id));
+    ctx->devices = (xmedia_cl_device_id *)calloc(ctx->num_devices, sizeof(xmedia_cl_device_id));
     if (ctx->devices == NULL) {
         XC_image_infer_destroy(ctx);
         return -1;
     }
 
-    ret = XC_cl_get_device_ids(XMEDIA_CL_DEVICE_ALL, ctx->devices, &ctx->num_devices);
+    ret = xmedia_cl_get_device_ids(XMEDIA_CL_DEVICE_ALL, ctx->devices, &ctx->num_devices);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
 
-    ctx->context = XC_cl_create_context(ctx->num_devices, ctx->devices, &err_code);
+    ctx->context = xmedia_cl_create_context(ctx->num_devices, ctx->devices, &err_code);
     if (err_code != 0 || ctx->context == NULL) {
         XC_image_infer_destroy(ctx);
         return err_code != 0 ? err_code : -1;
     }
 
-    ret = XC_cl_graph_querysize_from_file(ctx->config.model_path, &ctx->worksize, &ctx->weightsize);
+    ret = xmedia_cl_graph_querysize_from_file(ctx->config.model_path, &ctx->worksize, &ctx->weightsize);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
@@ -612,7 +614,7 @@ XC_s32 XC_image_infer_init(const XC_image_infer_config *config,
         return -1;
     }
 
-    ret = XC_cl_graph_loadmodel_from_file_withmem(&ctx->context,
+    ret = xmedia_cl_graph_loadmodel_from_file_withmem(&ctx->context,
         ctx->config.model_path, ctx->work_vir_addr, ctx->worksize,
         ctx->weight_vir_addr, ctx->weightsize, &ctx->graph);
     if (ret != 0) {
@@ -620,48 +622,48 @@ XC_s32 XC_image_infer_init(const XC_image_infer_config *config,
         return ret;
     }
 
-    ret = XC_cl_graph_get_input(ctx->graph, 0, &ctx->input);
+    ret = xmedia_cl_graph_get_input(ctx->graph, 0, &ctx->input);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
 
-    ctx->input_tensor_arr = (XC_cl_tensor *)calloc(ctx->input.num, sizeof(XC_cl_tensor));
+    ctx->input_tensor_arr = (xmedia_cl_tensor *)calloc(ctx->input.num, sizeof(xmedia_cl_tensor));
     if (ctx->input_tensor_arr == NULL) {
         XC_image_infer_destroy(ctx);
         return -1;
     }
     ctx->input.tensor = ctx->input_tensor_arr;
 
-    ret = XC_cl_graph_get_input(ctx->graph, ctx->input.num, &ctx->input);
+    ret = xmedia_cl_graph_get_input(ctx->graph, ctx->input.num, &ctx->input);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
 
-    ret = XC_cl_graph_get_output(ctx->graph, 0, &ctx->output);
+    ret = xmedia_cl_graph_get_output(ctx->graph, 0, &ctx->output);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
 
-    ctx->output_tensor_arr = (XC_cl_tensor *)calloc(ctx->output.num, sizeof(XC_cl_tensor));
+    ctx->output_tensor_arr = (xmedia_cl_tensor *)calloc(ctx->output.num, sizeof(xmedia_cl_tensor));
     if (ctx->output_tensor_arr == NULL) {
         XC_image_infer_destroy(ctx);
         return -1;
     }
     ctx->output.tensor = ctx->output_tensor_arr;
 
-    ret = XC_cl_graph_get_output(ctx->graph, ctx->output.num, &ctx->output);
+    ret = xmedia_cl_graph_get_output(ctx->graph, ctx->output.num, &ctx->output);
     if (ret != 0) {
         XC_image_infer_destroy(ctx);
         return ret;
     }
 
-    for (i = 0; i < (XC_s32)ctx->input.num; i++) {
+    for (i = 0; i < (XC_S32)ctx->input.num; i++) {
         ctx->inputsize += XC_ALIGN_FUNC(ctx->input.tensor[i].size, XC_ALIGN_BYTE);
     }
-    for (i = 0; i < (XC_s32)ctx->output.num; i++) {
+    for (i = 0; i < (XC_S32)ctx->output.num; i++) {
         ctx->outputsize += XC_ALIGN_FUNC(ctx->output.tensor[i].size, XC_ALIGN_BYTE);
     }
 
@@ -682,11 +684,11 @@ XC_s32 XC_image_infer_init(const XC_image_infer_config *config,
     return 0;
 }
 
-XC_s32 XC_image_infer_detect(XC_image_infer_handle *handle,
+XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle,
     const XC_input_img *input_img, XC_detect_result *result)
 {
-    XC_s32 ret;
-    XC_u32 channel_size;
+    XC_S32 ret;
+    XC_U32 channel_size;
 
     if (handle == NULL || input_img == NULL || result == NULL) {
         return -1;
@@ -705,18 +707,18 @@ XC_s32 XC_image_infer_detect(XC_image_infer_handle *handle,
     }
 
     memset(handle->input.tensor[0].addr, 0, handle->input.tensor[0].size);
-    ret = input_img_to_chw(input_img, (XC_u8 *)handle->input.tensor[0].addr,
+    ret = input_img_to_chw(input_img, (XC_U8 *)handle->input.tensor[0].addr,
         handle->config.image_width, handle->config.image_height);
     if (ret != 0) {
         return ret;
     }
 
-    ret = XC_cl_graph_set_inout(handle->graph, &handle->input, &handle->output);
+    ret = xmedia_cl_graph_set_inout(handle->graph, &handle->input, &handle->output);
     if (ret != 0) {
         return ret;
     }
 
-    ret = XC_cl_graph_process(handle->graph);
+    ret = xmedia_cl_graph_process(handle->graph);
     if (ret != 0) {
         return ret;
     }
@@ -739,7 +741,7 @@ XC_void XC_image_infer_result_deinit(XC_detect_result *result)
 
 XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
 {
-    XC_s32 err;
+    XC_S32 err;
 
     if (handle == NULL) {
         return;
@@ -756,9 +758,9 @@ XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
     }
 
     if (handle->graph != NULL) {
-        err = XC_cl_graph_unload(handle->graph);
+        err = xmedia_cl_graph_unload(handle->graph);
         if (err != 0) {
-            printf("XC_cl_graph_unload err, errno %d\n", err);
+            printf("xmedia_cl_graph_unload err, errno %d\n", err);
         }
     }
 
@@ -766,31 +768,31 @@ XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
     mmz_release(handle->work_phy_addr, handle->work_vir_addr);
 
     if (handle->context != NULL) {
-        err = XC_cl_release_context(handle->context);
+        err = xmedia_cl_release_context(handle->context);
         if (err != 0) {
-            printf("XC_cl_release_context err, errno %d\n", err);
+            printf("xmedia_cl_release_context err, errno %d\n", err);
         }
     }
 
     if (handle->devices != NULL) {
-        err = XC_cl_release_device_ids(handle->devices, &handle->num_devices);
+        err = xmedia_cl_release_device_ids(handle->devices, &handle->num_devices);
         if (err != 0) {
-            printf("XC_cl_release_device_ids err, errno %d\n", err);
+            printf("xmedia_cl_release_device_ids err, errno %d\n", err);
         }
         free(handle->devices);
     }
 
     if (handle->cl_inited == XMEDIA_TRUE) {
-        err = XC_cl_uninit();
+        err = xmedia_cl_uninit();
         if (err != 0) {
-            printf("XC_cl_uninit err, errno %d\n", err);
+            printf("xmedia_cl_uninit err, errno %d\n", err);
         }
     }
 
     if (handle->sys_inited == XMEDIA_TRUE) {
-        err = XC_sys_exit();
+        err = XC_Sys_exit();
         if (err != 0) {
-            printf("XC_sys_exit err, errno %d\n", err);
+            printf("XC_Sys_exit err, errno %d\n", err);
         }
     }
 
