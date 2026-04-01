@@ -22,13 +22,8 @@ DEMO_OBJS := $(patsubst examples/%.c,$(OBJ_DIR)/examples/%.o,$(DEMO_SRCS))
 
 INCLUDES := $(SAMPLE_INCLUDES)
 INCLUDES += -I./include
-INCLUDES += -I../demo_ai/ffmpeg/include
 
 LIBS := -lxmedia_cl $(SAMPLE_LIBS) $(SAMPLE_COMMON_LIB) -lm -lpthread -lstdc++
-
-ifeq ($(TOOLCHAIN),arm-gcc12.2.0-linux)
-	LIBS += -L../demo_ai/ffmpeg/lib/arm-gcc12.2.0-linux-gnueabi -lavformat -lavcodec -lavutil -lswscale -lswresample
-endif
 
 CFLAGS := $(SAMPLE_CFLAGS) $(INCLUDES)
 

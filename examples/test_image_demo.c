@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "../include/xm_image_infer.h"
 
@@ -15,14 +16,22 @@ int main(int argc, char *argv[])
         .person_class_id = 0,
     };
     xm_image_infer_handle *handle = NULL;
+    xm_input_img input_img;
     xm_detect_result result = {0};
     xmedia_s32 ret;
     xmedia_u32 i;
 
-    if (argc < 2) {
-        printf("Usage: %s <image_path>\n", argv[0]);
+    if (argc < 6) {
+        printf("Usage: %s <phy_addr_hex> <width> <height> <stride> <pixel_format>\n", argv[0]);
+        printf("pixel_format: 0=RGB888, 1=BGR888\n");
         return -1;
     }
+
+    input_img.phy_addr = (xmedia_u64)strtoull(argv[1], NULL, 0);
+    input_img.width = (xmedia_u32)strtoul(argv[2], NULL, 0);
+    input_img.height = (xmedia_u32)strtoul(argv[3], NULL, 0);
+    input_img.stride = (xmedia_u32)strtoul(argv[4], NULL, 0);
+    input_img.pixel_format = (xm_image_format)strtoul(argv[5], NULL, 0);
 
     ret = xm_image_infer_init(&config, &handle);
     if (ret != 0) {
@@ -30,7 +39,7 @@ int main(int argc, char *argv[])
         return ret;
     }
 
-    ret = xm_image_infer_detect(handle, argv[1], &result);
+    ret = xm_image_infer_detect(handle, &input_img, &result);
     if (ret != 0) {
         printf("xm_image_infer_detect failed: %d\n", ret);
         xm_image_infer_destroy(handle);

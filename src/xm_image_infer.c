@@ -1,6 +1,5 @@
 #include "../include/xm_image_infer.h"
 
-#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,12 +7,6 @@
 
 #include "xmedia_mmz.h"
 #include "xmedia_sys.h"
-
-#include "libavcodec/avcodec.h"
-#include "libavformat/avformat.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/pixfmt.h"
-#include "libswscale/swscale.h"
 
 #define XM_ALIGN_BYTE 16
 #define XM_DFL_BINS 16
@@ -56,30 +49,15 @@ struct xm_image_infer_handle {
     xmedia_bool cl_inited;
 };
 
-static xmedia_bool is_jpeg_file(const char *filename)
+static xmedia_u32 get_pixel_bytes(xm_image_format pixel_format)
 {
-    const char *ext = strrchr(filename, '.');
-
-    if (ext == NULL) {
-        return XMEDIA_FALSE;
+    switch (pixel_format) {
+        case XM_IMAGE_FORMAT_RGB888:
+        case XM_IMAGE_FORMAT_BGR888:
+            return 3;
+        default:
+            return 0;
     }
-
-    if (tolower((unsigned char)ext[1]) == 'j' &&
-        tolower((unsigned char)ext[2]) == 'p' &&
-        tolower((unsigned char)ext[3]) == 'g' &&
-        ext[4] == '\0') {
-        return XMEDIA_TRUE;
-    }
-
-    if (tolower((unsigned char)ext[1]) == 'j' &&
-        tolower((unsigned char)ext[2]) == 'p' &&
-        tolower((unsigned char)ext[3]) == 'e' &&
-        tolower((unsigned char)ext[4]) == 'g' &&
-        ext[5] == '\0') {
-        return XMEDIA_TRUE;
-    }
-
-    return XMEDIA_FALSE;
 }
 
 static xmedia_s32 mmz_alloc(xmedia_u64 *phy_addr, void **vir_addr, xmedia_u32 size)
@@ -109,143 +87,62 @@ static xmedia_void mmz_release(xmedia_u64 phy_addr, void *vir_addr)
     }
 }
 
-static xmedia_s32 decode_jpeg_to_rgb24(const char *filename, xmedia_u8 **rgb_buffer,
+static xmedia_s32 input_img_to_chw(const xm_input_img *input_img, xmedia_u8 *tensor_buffer,
     xmedia_u32 dst_width, xmedia_u32 dst_height)
 {
-    xmedia_s32 ret = -1;
-    xmedia_s32 stream_index;
-    AVFormatContext *format_context = NULL;
-    const AVCodec *codec = NULL;
-    AVCodecContext *codec_context = NULL;
-    AVPacket *packet = NULL;
-    AVFrame *frame = NULL;
-    AVFrame *frame_rgb = NULL;
-    struct SwsContext *sws_context = NULL;
-    xmedia_u8 *buffer = NULL;
-    xmedia_s32 num_bytes;
-
-    *rgb_buffer = NULL;
-
-    if (avformat_open_input(&format_context, filename, NULL, NULL) != 0) {
-        goto EXIT;
-    }
-
-    if (avformat_find_stream_info(format_context, NULL) < 0) {
-        goto EXIT;
-    }
-
-    stream_index = av_find_best_stream(format_context, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
-    if (stream_index < 0 || codec == NULL) {
-        goto EXIT;
-    }
-
-    codec_context = avcodec_alloc_context3(codec);
-    if (codec_context == NULL) {
-        goto EXIT;
-    }
-
-    if (avcodec_parameters_to_context(codec_context,
-        format_context->streams[stream_index]->codecpar) < 0) {
-        goto EXIT;
-    }
-
-    if (avcodec_open2(codec_context, codec, NULL) < 0) {
-        goto EXIT;
-    }
-
-    packet = av_packet_alloc();
-    frame = av_frame_alloc();
-    frame_rgb = av_frame_alloc();
-    if (packet == NULL || frame == NULL || frame_rgb == NULL) {
-        goto EXIT;
-    }
-
-    num_bytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, dst_width, dst_height, 1);
-    if (num_bytes <= 0) {
-        goto EXIT;
-    }
-
-    buffer = (xmedia_u8 *)malloc(num_bytes);
-    if (buffer == NULL) {
-        goto EXIT;
-    }
-
-    if (av_image_fill_arrays(frame_rgb->data, frame_rgb->linesize, buffer,
-        AV_PIX_FMT_RGB24, dst_width, dst_height, 1) < 0) {
-        goto EXIT;
-    }
-
-    sws_context = sws_getContext(codec_context->width, codec_context->height, codec_context->pix_fmt,
-        dst_width, dst_height, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
-    if (sws_context == NULL) {
-        goto EXIT;
-    }
-
-    while (av_read_frame(format_context, packet) >= 0) {
-        if (packet->stream_index != stream_index) {
-            av_packet_unref(packet);
-            continue;
-        }
-
-        if (avcodec_send_packet(codec_context, packet) < 0) {
-            av_packet_unref(packet);
-            goto EXIT;
-        }
-        av_packet_unref(packet);
-
-        while (avcodec_receive_frame(codec_context, frame) >= 0) {
-            sws_scale(sws_context, (const xmedia_u8 * const *)frame->data, frame->linesize,
-                0, frame->height, frame_rgb->data, frame_rgb->linesize);
-            *rgb_buffer = buffer;
-            buffer = NULL;
-            ret = 0;
-            goto EXIT;
-        }
-    }
-
-EXIT:
-    if (buffer != NULL) {
-        free(buffer);
-    }
-    if (sws_context != NULL) {
-        sws_freeContext(sws_context);
-    }
-    if (frame_rgb != NULL) {
-        av_frame_free(&frame_rgb);
-    }
-    if (frame != NULL) {
-        av_frame_free(&frame);
-    }
-    if (packet != NULL) {
-        av_packet_free(&packet);
-    }
-    if (codec_context != NULL) {
-        avcodec_free_context(&codec_context);
-    }
-    if (format_context != NULL) {
-        avformat_close_input(&format_context);
-    }
-
-    return ret;
-}
-
-static xmedia_void rgb24_to_chw(const xmedia_u8 *rgb_buffer, xmedia_u8 *tensor_buffer,
-    xmedia_u32 width, xmedia_u32 height)
-{
-    xmedia_u32 hw = width * height;
+    xmedia_u32 bytes_per_pixel;
+    xmedia_u32 map_size;
+    xmedia_u32 hw;
+    xmedia_u8 *frame_vir_addr;
     xmedia_u32 x;
     xmedia_u32 y;
 
-    for (y = 0; y < height; y++) {
-        for (x = 0; x < width; x++) {
-            xmedia_u32 src_index = (y * width + x) * 3;
-            xmedia_u32 dst_index = y * width + x;
+    if (input_img == NULL || tensor_buffer == NULL) {
+        return -1;
+    }
 
-            tensor_buffer[dst_index] = rgb_buffer[src_index];
-            tensor_buffer[hw + dst_index] = rgb_buffer[src_index + 1];
-            tensor_buffer[2 * hw + dst_index] = rgb_buffer[src_index + 2];
+    bytes_per_pixel = get_pixel_bytes(input_img->pixel_format);
+    if (bytes_per_pixel == 0 || input_img->phy_addr == 0 || input_img->width == 0 ||
+        input_img->height == 0 || input_img->stride == 0) {
+        return -1;
+    }
+
+    if (input_img->width != dst_width || input_img->height != dst_height) {
+        return -1;
+    }
+
+    if (input_img->stride < input_img->width * bytes_per_pixel) {
+        return -1;
+    }
+
+    map_size = input_img->stride * input_img->height;
+    frame_vir_addr = (xmedia_u8 *)xmedia_mmz_map(input_img->phy_addr, map_size, 0);
+    if (frame_vir_addr == NULL) {
+        return -1;
+    }
+
+    hw = dst_width * dst_height;
+
+    for (y = 0; y < dst_height; y++) {
+        const xmedia_u8 *src_row = frame_vir_addr + y * input_img->stride;
+        for (x = 0; x < dst_width; x++) {
+            const xmedia_u8 *pixel = src_row + x * bytes_per_pixel;
+            xmedia_u32 dst_index = y * dst_width + x;
+
+            if (input_img->pixel_format == XM_IMAGE_FORMAT_RGB888) {
+                tensor_buffer[dst_index] = pixel[0];
+                tensor_buffer[hw + dst_index] = pixel[1];
+                tensor_buffer[2 * hw + dst_index] = pixel[2];
+            } else {
+                tensor_buffer[dst_index] = pixel[2];
+                tensor_buffer[hw + dst_index] = pixel[1];
+                tensor_buffer[2 * hw + dst_index] = pixel[0];
+            }
         }
     }
+
+    xmedia_mmz_unmap(frame_vir_addr);
+    return 0;
 }
 
 static xmedia_u32 get_tensor_bytes_per_element(const xmedia_cl_tensor *tensor)
@@ -786,44 +683,33 @@ xmedia_s32 xm_image_infer_init(const xm_image_infer_config *config,
 }
 
 xmedia_s32 xm_image_infer_detect(xm_image_infer_handle *handle,
-    const xmedia_char *image_path, xm_detect_result *result)
+    const xm_input_img *input_img, xm_detect_result *result)
 {
     xmedia_s32 ret;
-    xmedia_u8 *img_buffer = NULL;
     xmedia_u32 channel_size;
 
-    if (handle == NULL || image_path == NULL || result == NULL) {
+    if (handle == NULL || input_img == NULL || result == NULL) {
         return -1;
     }
 
     result->boxes = NULL;
     result->count = 0;
 
-    if (!is_jpeg_file(image_path)) {
-        return -1;
-    }
-
-    ret = decode_jpeg_to_rgb24(image_path, &img_buffer,
-        handle->config.image_width, handle->config.image_height);
-    if (ret != 0 || img_buffer == NULL) {
-        return -1;
-    }
-
     if (handle->input.num == 0 || handle->input.tensor[0].addr == NULL) {
-        free(img_buffer);
         return -1;
     }
 
     channel_size = handle->config.image_width * handle->config.image_height;
     if (channel_size * 3 > handle->input.tensor[0].size) {
-        free(img_buffer);
         return -1;
     }
 
     memset(handle->input.tensor[0].addr, 0, handle->input.tensor[0].size);
-    rgb24_to_chw(img_buffer, (xmedia_u8 *)handle->input.tensor[0].addr,
+    ret = input_img_to_chw(input_img, (xmedia_u8 *)handle->input.tensor[0].addr,
         handle->config.image_width, handle->config.image_height);
-    free(img_buffer);
+    if (ret != 0) {
+        return ret;
+    }
 
     ret = xmedia_cl_graph_set_inout(handle->graph, &handle->input, &handle->output);
     if (ret != 0) {
