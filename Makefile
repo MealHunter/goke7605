@@ -1,4 +1,4 @@
-# Makefile for libxm_image_infer.a
+# Makefile for libXC_image_infer.a
 
 ifeq ($(CFG_XMEDIA_EXPORT_FLAG),)
     SDK_DIR := $(shell cd $(CURDIR)/../../.. && /bin/pwd)
@@ -7,7 +7,7 @@ endif
 include $(SDK_DIR)/build/base.mk
 include $(SAMPLE_DIR)/sample_base.mk
 
-LIB_NAME := libxm_image_infer.a
+LIB_NAME := libXC_image_infer.a
 DEMO_NAME := test_image_demo
 
 BUILD_DIR := build
@@ -23,7 +23,7 @@ DEMO_OBJS := $(patsubst examples/%.c,$(OBJ_DIR)/examples/%.o,$(DEMO_SRCS))
 INCLUDES := $(SAMPLE_INCLUDES)
 INCLUDES += -I./include
 
-LIBS := -lxmedia_cl $(SAMPLE_LIBS) $(SAMPLE_COMMON_LIB) -lm -lpthread -lstdc++
+LIBS := -lXC_cl $(SAMPLE_LIBS) $(SAMPLE_COMMON_LIB) -lm -lpthread -lstdc++
 
 CFLAGS := $(SAMPLE_CFLAGS) $(INCLUDES)
 
@@ -44,7 +44,7 @@ $(LIB_DIR)/$(LIB_NAME): $(LIB_OBJS)
 	$(AT)$(AR) rcs $@ $^
 
 $(BIN_DIR)/$(DEMO_NAME): $(DEMO_OBJS) $(LIB_DIR)/$(LIB_NAME)
-	$(AT)$(CC) -o $@ $(DEMO_OBJS) -L$(LIB_DIR) -lxm_image_infer $(LIBS)
+	$(AT)$(CC) -o $@ $(DEMO_OBJS) -L$(LIB_DIR) -lXC_image_infer $(LIBS)
 
 clean:
 	$(AT)rm -rf $(BUILD_DIR) $(LIB_DIR) $(BIN_DIR)
