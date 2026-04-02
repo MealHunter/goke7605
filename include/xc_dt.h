@@ -1,17 +1,18 @@
 #ifndef __XC_DT_H__
 #define __XC_DT_H__
 
+#include "xmedia_cl.h"
+#include "xc_common_datatype.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "xmedia_cl.h"
-#include "xc_common_datatype.h"
 
 typedef struct XC_image_infer_handle XC_image_infer_handle;
 
 typedef struct {
-    char *model_path;
+    const char *model_path;
     XC_U32 image_width;
     XC_U32 image_height;
     XC_FLOAT score_thresh;

@@ -1,87 +1,78 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
-project(goke7605 LANGUAGES C CXX)
+# ==========================
+# 交叉编译配置
+# ==========================
+set(TOO_CHAIN_PATH "/home/yang/workdir/toolchain/tool/arm-gcc12.2.0-linux-uclibceabi/bin/")
+set(TOO_CHAIN "arm-gcc12.2.0_uClibcng1.0.48-linux-uclibceabi-")
+set(CMAKE_C_COMPILER "${TOO_CHAIN_PATH}${TOO_CHAIN}gcc")
+set(CMAKE_CXX_COMPILER "${TOO_CHAIN_PATH}${TOO_CHAIN}g++")
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS ON)
+project(dt VERSION 1.0.0)
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS ON)
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR arm)
 
-option(XC_BUILD_DEMO "Build examples/test_image_demo.c" OFF)
-option(XC_BUILD_SAMPLE "Build sample/test_image.c" OFF)
+# ==========================
+# 搜索头文件、库文件的查找规则
+# ==========================
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 
-set(XC_SDK_INCLUDE_DIRS "" CACHE PATH "Additional SDK include directories (for xmedia_mmz.h/xmedia_sys.h)")
-set(XC_SDK_LIBRARY_DIRS "" CACHE PATH "Additional SDK library directories")
-set(XC_SDK_LIBRARIES "xmedia_cl;xmedia_mmz;xmedia_sys" CACHE STRING "SDK libraries required by xc_image_infer")
-set(XC_SAMPLE_INCLUDE_DIRS "" CACHE PATH "Additional include directories for sample/test_image.c (for FFmpeg headers, etc.)")
-set(XC_SAMPLE_LIBRARIES "avformat;avcodec;avutil;swscale;swresample" CACHE STRING "Extra libraries required by sample/test_image.c")
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-find_package(Threads REQUIRED)
-
-add_library(xc_image_infer STATIC
-    src/xc_dt.cpp
-)
-
-target_include_directories(xc_image_infer
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE
-        ${XC_SDK_INCLUDE_DIRS}
-)
-
-target_link_directories(xc_image_infer
-    PRIVATE
-        ${XC_SDK_LIBRARY_DIRS}
-)
-
-target_link_libraries(xc_image_infer
-    PUBLIC
-        Threads::Threads
-        m
-    PRIVATE
-        ${XC_SDK_LIBRARIES}
-)
-
-if(XC_BUILD_DEMO)
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/include/xm_image_infer.h")
-        message(FATAL_ERROR
-            "examples/test_image_demo.c includes ../include/xm_image_infer.h, but that file does not exist in this repo. "
-            "Update the example include or provide a compatibility header before enabling XC_BUILD_DEMO.")
-    endif()
-
-    add_executable(test_image_demo
-        examples/test_image_demo.c
-    )
-
-    target_link_libraries(test_image_demo
-        PRIVATE
-            xc_image_infer
-    )
+# ==========================
+# 编译选项
+# ==========================
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+set(CMAKE_C_FLAGS "-O3 -ldl -pthread -lstdc++")
+set(CMAKE_CXX_FLAGS "-O3 -ldl -pthread -lstdc++")
+else()
+set(CMAKE_C_FLAGS "-O3 -ldl -lstdc++")
+set(CMAKE_CXX_FLAGS "-O3 -ldl -lstdc++")
 endif()
 
-if(XC_BUILD_SAMPLE)
-    add_executable(test_image
-        sample/test_image.c
-    )
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}" CACHE STRING "c flags")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "c++ flags")
 
-    target_include_directories(test_image
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${XC_SDK_INCLUDE_DIRS}
-            ${XC_SAMPLE_INCLUDE_DIRS}
-    )
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
-    target_link_directories(test_image
-        PRIVATE
-            ${XC_SDK_LIBRARY_DIRS}
-    )
+# ==========================
+# 头文件路径
+# ==========================
+include_directories(
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/third_party/goke/include
+)
 
-    target_link_libraries(test_image
-        PRIVATE
-            xc_image_infer
-            ${XC_SAMPLE_LIBRARIES}
-    )
-endif()
+# ==========================
+# 库路径
+# ==========================
+link_directories(
+    ${PROJECT_SOURCE_DIR}/lib
+)
+
+# ==========================
+# 源码收集
+# ==========================
+file(GLOB SRC_FILES
+    ${PROJECT_SOURCE_DIR}/src/*.cpp
+)
+
+# ==========================
+# 构建静态库 libxcalgo_dt.a
+# ==========================
+add_library(xcalgo_dt STATIC ${SRC_FILES})
+
+# ==========================
+# 头文件路径：PUBLIC / PRIVATE
+# ==========================
+target_include_directories(xcalgo_dt
+    PUBLIC 
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/third_party/goke/include
+
+    # PRIVATE 
+    #     ${PROJECT_SOURCE_DIR}/internal
+)
