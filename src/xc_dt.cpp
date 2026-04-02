@@ -1,4 +1,7 @@
-#include "../include/XC_image_infer.h"
+#ifndef __XC_DT_H__
+#define __XC_DT_H__
+
+#include "xc_dt.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -6,9 +9,13 @@
 #include <string.h>
 
 #include "xmedia_cl.h"
-#include "XC_common_datatype.h"
+#include "xc_common_datatype.h"
 #include "xmedia_mmz.h"
 #include "xmedia_sys.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define XC_ALIGN_BYTE 16
 #define XC_DFL_BINS 16
@@ -798,3 +805,9 @@ XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
 
     free(handle);
 }
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

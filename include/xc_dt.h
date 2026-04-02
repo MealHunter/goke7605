@@ -1,17 +1,17 @@
-#ifndef XM_IMAGE_INFER_H
-#define XM_IMAGE_INFER_H
+#ifndef __XC_DT_H__
+#define __XC_DT_H__
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "xmedia_cl.h"
-#include "XC_common_datatype.h"
+#include "xc_common_datatype.h"
 
 typedef struct XC_image_infer_handle XC_image_infer_handle;
 
 typedef struct {
-    const XC_char *model_path;
+    char *model_path;
     XC_U32 image_width;
     XC_U32 image_height;
     XC_FLOAT score_thresh;
@@ -48,15 +48,13 @@ typedef struct {
     XC_U32 count;
 } XC_detect_result;
 
-XC_S32 XC_image_infer_init(const XC_image_infer_config *config,
-    XC_image_infer_handle **handle);
+XC_S32 XC_image_infer_init(const XC_image_infer_config *config, XC_image_infer_handle **handle);
 
-XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle,
-    const XC_input_img *input_img, XC_detect_result *result);
+XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle, const XC_input_img *input_img, XC_detect_result *result);
 
-XC_void XC_image_infer_result_deinit(XC_detect_result *result);
+void XC_image_infer_result_deinit(XC_detect_result *result);
 
-XC_void XC_image_infer_destroy(XC_image_infer_handle *handle);
+void XC_image_infer_destroy(XC_image_infer_handle *handle);
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../include/xm_image_infer.h"
+#include "xc_dt.h"
 
 #define MODEL_PATH "/mnt/sdcard/data/neuron_network.xmm"
 
