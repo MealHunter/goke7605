@@ -30,4 +30,6 @@ typedef unsigned long long XC_PHY;
 /// data type pointer content
 typedef unsigned long XC_VIRT;
 
+typedef unsigned char XC_BOOL;
+
 #endif

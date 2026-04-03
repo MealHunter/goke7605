@@ -43,7 +43,7 @@ set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 # ==========================
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/third_party/goke/include
+    # ${PROJECT_SOURCE_DIR}/third_party/goke/include
 )
 
 # ==========================
@@ -71,7 +71,7 @@ add_library(xcalgo_dt STATIC ${SRC_FILES})
 target_include_directories(xcalgo_dt
     PUBLIC 
         ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/third_party/goke/include
+        # ${PROJECT_SOURCE_DIR}/third_party/goke/include
 
     # PRIVATE 
     #     ${PROJECT_SOURCE_DIR}/internal

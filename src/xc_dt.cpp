@@ -17,6 +17,15 @@
 extern "C" {
 #endif
 
+/*
+ * 这个文件实现一个“板端单帧目标检测封装层”。
+ * 整体流程如下：
+ * 1. init 阶段初始化系统与 xmedia_cl，加载 .xmm 模型，准备输入输出 tensor；
+ * 2. detect 阶段把物理地址图像搬运为 CHW 输入，执行 graph 推理；
+ * 3. 从输出 tensor 中解码候选框，按类别过滤并做 NMS；
+ * 4. destroy 阶段按逆序释放所有底层资源。
+ */
+
 #define XC_ALIGN_BYTE 16
 #define XC_DFL_BINS 16
 #define XC_YOLO_CLASS_NUM 80
@@ -32,12 +41,22 @@ typedef struct {
     XC_U32 stride;
 } detect_level_info;
 
+/*
+ * 推理句柄内部状态。
+ *
+ * 对外只暴露一个不透明指针，对内保存：
+ * - 初始化配置
+ * - xmedia_cl 设备 / context / graph
+ * - 输入输出 tensor 元信息与地址数组
+ * - work / weight / input / output 四类 MMZ 物理+虚拟地址
+ * - 运行时初始化标记，便于 destroy 时安全回收
+ */
 struct XC_image_infer_handle {
     XC_image_infer_config config;
     xmedia_cl_context context;
     xmedia_cl_device_id *devices;
     xmedia_cl_u32 num_devices;
-    xmedia_cl_graph graph;
+    xmedia_cl_graph graph;              //只是一个地址
     xmedia_cl_tensor_info_inout input;
     xmedia_cl_tensor_info_inout output;
     xmedia_cl_tensor *input_tensor_arr;
@@ -54,8 +73,8 @@ struct XC_image_infer_handle {
     xmedia_cl_u32 weightsize;
     XC_U32 inputsize;
     XC_U32 outputsize;
-    XC_bool sys_inited;
-    XC_bool cl_inited;
+    XC_BOOL sys_inited;
+    XC_BOOL cl_inited;
 };
 
 static XC_U32 get_pixel_bytes(XC_image_format pixel_format)
@@ -69,6 +88,10 @@ static XC_U32 get_pixel_bytes(XC_image_format pixel_format)
     }
 }
 
+/*
+ * 申请一段 MMZ 物理内存并立即映射到虚拟地址。
+ * 这是整个推理流程里最常用的底层内存分配封装。
+ */
 static XC_S32 mmz_alloc(XC_U64 *phy_addr, void **vir_addr, XC_U32 size)
 {
     *phy_addr = XC_mmz_alloc(NULL, "xmimg", size);
@@ -86,6 +109,10 @@ static XC_S32 mmz_alloc(XC_U64 *phy_addr, void **vir_addr, XC_U32 size)
     return 0;
 }
 
+/*
+ * 释放 MMZ 资源。
+ * 允许 phy_addr 或 vir_addr 单独为空，方便 destroy 做幂等回收。
+ */
 static XC_void mmz_release(XC_U64 phy_addr, void *vir_addr)
 {
     if (vir_addr != NULL) {
@@ -96,6 +123,14 @@ static XC_void mmz_release(XC_U64 phy_addr, void *vir_addr)
     }
 }
 
+/*
+ * 将一帧板端图像从物理地址映射出来，并转换为模型输入所需的 CHW 布局。
+ *
+ * 当前限制：
+ * - 只支持 RGB888 / BGR888；
+ * - 输入尺寸必须与模型输入尺寸完全一致；
+ * - 不负责缩放、裁剪和颜色空间转换之外的额外预处理。
+ */
 static XC_S32 input_img_to_chw(const XC_input_img *input_img, XC_U8 *tensor_buffer,
     XC_U32 dst_width, XC_U32 dst_height)
 {
@@ -154,6 +189,10 @@ static XC_S32 input_img_to_chw(const XC_input_img *input_img, XC_U8 *tensor_buff
     return 0;
 }
 
+/*
+ * 返回 tensor 每个元素占用字节数。
+ * 用于后续根据 tensor->size 反推出实际物理宽度，避免按逻辑 shape 直接索引。
+ */
 static XC_U32 get_tensor_bytes_per_element(const xmedia_cl_tensor *tensor)
 {
     if (tensor->shape.type == XMEDIA_CL_FP32) {
@@ -169,6 +208,13 @@ static XC_U32 get_tensor_bytes_per_element(const xmedia_cl_tensor *tensor)
     return 0;
 }
 
+/*
+ * 根据 tensor 总字节数推导输出 tensor 的“物理宽度”。
+ *
+ * 某些 NPU 输出张量在内存里会按硬件要求进行行对齐，
+ * 实际宽度可能大于 shape.dims[3] 的逻辑宽度。
+ * 后续读取 tensor 时必须按物理宽度访问，否则从第二行开始可能取错数据。
+ */
 static XC_U32 get_tensor_physical_width(const xmedia_cl_tensor *tensor)
 {
     XC_U32 channels = tensor->shape.dims[1];
@@ -183,6 +229,10 @@ static XC_U32 get_tensor_physical_width(const xmedia_cl_tensor *tensor)
     return tensor->size / (channels * height * bytes_per_elem);
 }
 
+/*
+ * 读取 tensor 中指定位置的值，并统一转成 float。
+ * 同时处理 FP32 / UINT8 / INT8 三种张量类型及量化反算。
+ */
 static XC_FLOAT tensor_value_to_float(const xmedia_cl_tensor *tensor, XC_U32 channel,
     XC_U32 y, XC_U32 x)
 {
@@ -208,6 +258,7 @@ static XC_FLOAT tensor_value_to_float(const xmedia_cl_tensor *tensor, XC_U32 cha
     return 0.0f;
 }
 
+/* 稳定版 sigmoid，避免大正/大负输入时数值溢出。 */
 static XC_FLOAT sigmoidf_safe(XC_FLOAT x)
 {
     if (x >= 0.0f) {
@@ -219,6 +270,7 @@ static XC_FLOAT sigmoidf_safe(XC_FLOAT x)
     return z / (1.0f + z);
 }
 
+/* 将浮点数限制在给定区间，主要用于输出框坐标裁剪。 */
 static XC_FLOAT clampf_safe(XC_FLOAT value, XC_FLOAT min_value, XC_FLOAT max_value)
 {
     if (value < min_value) {
@@ -230,6 +282,12 @@ static XC_FLOAT clampf_safe(XC_FLOAT value, XC_FLOAT min_value, XC_FLOAT max_val
     return value;
 }
 
+/*
+ * DFL(Distribution Focal Loss) 距离解码。
+ *
+ * 回归头对每个边界不是直接输出一个距离，而是输出若干 bin 的分布。
+ * 这里先做 softmax，再计算期望值，最后乘以 stride 还原到当前检测层尺度。
+ */
 static XC_FLOAT decode_dfl_distance(const xmedia_cl_tensor *reg_tensor,
     XC_U32 side_index, XC_U32 y, XC_U32 x, XC_U32 stride)
 {
@@ -264,6 +322,7 @@ static XC_FLOAT decode_dfl_distance(const xmedia_cl_tensor *reg_tensor,
     return expectation * stride;
 }
 
+/* qsort 比较函数：按 score 从大到小排序。 */
 static XC_S32 compare_candidate_desc(const void *left, const void *right)
 {
     const XC_detect_box *a = (const XC_detect_box *)left;
@@ -278,6 +337,7 @@ static XC_S32 compare_candidate_desc(const void *left, const void *right)
     return 0;
 }
 
+/* 计算两个检测框的 IoU，用于后续 NMS。 */
 static XC_FLOAT compute_iou(const XC_detect_box *a, const XC_detect_box *b)
 {
     XC_FLOAT xx1 = a->x1 > b->x1 ? a->x1 : b->x1;
@@ -307,6 +367,10 @@ static XC_FLOAT compute_iou(const XC_detect_box *a, const XC_detect_box *b)
     return inter_area / union_area;
 }
 
+/*
+ * 对候选框做按类别 NMS。
+ * 输入数组会被原地压缩，返回保留下来的框数量。
+ */
 static XC_U32 apply_nms(XC_detect_box *candidates, XC_U32 candidate_count,
     XC_FLOAT iou_thresh)
 {
@@ -348,6 +412,14 @@ static XC_U32 apply_nms(XC_detect_box *candidates, XC_U32 candidate_count,
     return keep_count;
 }
 
+/*
+ * 根据输出 tensor 的 shape 将多个输出分组成检测层。
+ *
+ * 当前默认每个检测层由一组回归头 + 一组分类头组成，
+ * 并通过通道数判断：
+ * - XC_DFL_BINS * 4 -> 回归头
+ * - XC_YOLO_CLASS_NUM -> 分类头
+ */
 static XC_S32 collect_detect_levels(const XC_image_infer_handle *handle,
     detect_level_info *levels, XC_U32 max_levels)
 {
@@ -393,6 +465,18 @@ static XC_S32 collect_detect_levels(const XC_image_infer_handle *handle,
     return (XC_S32)level_count;
 }
 
+/*
+ * 从模型输出 tensor 中解码出最终检测结果。
+ *
+ * 主要步骤：
+ * 1. 识别每个检测层的 reg/cls tensor；
+ * 2. 遍历所有 grid，找出得分最高类别；
+ * 3. 只保留配置中的目标类别，并按阈值过滤；
+ * 4. 用 DFL 结果解码 l/t/r/b；
+ * 5. 转成图像坐标并裁剪；
+ * 6. 按 score 排序并执行 NMS；
+ * 7. 把最终结果拷贝到 result->boxes。
+ */
 static XC_S32 collect_candidate_boxes(const XC_image_infer_handle *handle,
     XC_detect_result *result)
 {
@@ -514,6 +598,10 @@ static XC_S32 collect_candidate_boxes(const XC_image_infer_handle *handle,
     return 0;
 }
 
+/*
+ * 将一组 tensor 的 addr 指针顺序映射到连续的大块缓冲区上。
+ * 相邻 tensor 之间按 16 字节对齐，便于匹配底层硬件要求。
+ */
 static XC_S32 assign_tensor_addrs(xmedia_cl_tensor_info_inout *tensor_info, void *base_addr)
 {
     XC_S32 i;
@@ -530,6 +618,10 @@ static XC_S32 assign_tensor_addrs(xmedia_cl_tensor_info_inout *tensor_info, void
     return 0;
 }
 
+/*
+ * 填充默认配置。
+ * 若调用方未显式指定常用参数，则使用当前模型的默认推理尺寸与阈值。
+ */
 static XC_void fill_default_config(XC_image_infer_config *config)
 {
     if (config->image_width == 0) {
@@ -546,8 +638,21 @@ static XC_void fill_default_config(XC_image_infer_config *config)
     }
 }
 
-XC_S32 XC_image_infer_init(const XC_image_infer_config *config,
-    XC_image_infer_handle **handle)
+/*
+ * 初始化推理句柄。
+ *
+ * 资源准备顺序：
+ * 1. 参数校验并复制配置；
+ * 2. 初始化系统与 CL 运行时；
+ * 3. 枚举设备并创建 context；
+ * 4. 查询模型 work/weight 大小并申请 MMZ；
+ * 5. 加载 graph；
+ * 6. 查询输入输出 tensor 信息；
+ * 7. 为输入输出 tensor 申请连续缓冲区并分配地址。
+ *
+ * 任一步骤失败都会调用 destroy 做统一清理。
+ */
+XC_S32 XC_image_infer_init(const XC_image_infer_config *config, XC_image_infer_handle **handle)
 {
     XC_image_infer_handle *ctx;
     xmedia_cl_s32 err_code = 0;
@@ -691,8 +796,17 @@ XC_S32 XC_image_infer_init(const XC_image_infer_config *config,
     return 0;
 }
 
-XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle,
-    const XC_input_img *input_img, XC_detect_result *result)
+/*
+ * 执行一次单帧检测。
+ *
+ * 主流程：
+ * 1. 检查输入与 tensor 缓冲区状态；
+ * 2. 将物理地址图像搬运为 CHW 输入；
+ * 3. 绑定输入输出 tensor；
+ * 4. 执行 graph 推理；
+ * 5. 从输出 tensor 解码候选框并返回。
+ */
+XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle, const XC_input_img *input_img, XC_detect_result *result)
 {
     XC_S32 ret;
     XC_U32 channel_size;
@@ -733,6 +847,7 @@ XC_S32 XC_image_infer_detect(XC_image_infer_handle *handle,
     return collect_candidate_boxes(handle, result);
 }
 
+/* 释放一次检测调用返回的框数组。 */
 XC_void XC_image_infer_result_deinit(XC_detect_result *result)
 {
     if (result == NULL) {
@@ -746,6 +861,17 @@ XC_void XC_image_infer_result_deinit(XC_detect_result *result)
     result->count = 0;
 }
 
+/*
+ * 销毁句柄并按依赖逆序释放资源。
+ *
+ * 释放顺序大致为：
+ * - 输出/输入缓冲区
+ * - tensor 数组
+ * - graph
+ * - work/weight 内存
+ * - context / device
+ * - cl runtime / system
+ */
 XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
 {
     XC_S32 err;
