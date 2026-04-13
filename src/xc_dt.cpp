@@ -1,6 +1,3 @@
-#ifndef __XC_DT_H__
-#define __XC_DT_H__
-
 #include "xc_dt.h"
 
 #include <math.h>
@@ -550,7 +547,8 @@ static XC_S32 collect_candidate_boxes(const XC_image_infer_handle *handle,
                 center_y = ((XC_FLOAT)y + 0.5f) * level->stride;
                 scale_x = level->width == 0 ? 1.0f :
                     ((XC_FLOAT)handle->config.image_width / (level->width * level->stride));
-                scale_y = 1.0f;
+                scale_y = level->height == 0 ? 1.0f :
+                    ((XC_FLOAT)handle->config.image_height / (level->height * level->stride));
 
                 x1 = clampf_safe((center_x - left) * scale_x, 0.0f,
                     (XC_FLOAT)(handle->config.image_width - 1));
@@ -571,8 +569,6 @@ static XC_S32 collect_candidate_boxes(const XC_image_infer_handle *handle,
                 candidates[candidate_count].y1 = y1;
                 candidates[candidate_count].x2 = x2;
                 candidates[candidate_count].y2 = y2;
-                candidates[candidate_count].stride = level->stride;
-                candidates[candidate_count].level = (XC_U32)level_index;
                 candidate_count++;
             }
         }
@@ -934,6 +930,4 @@ XC_void XC_image_infer_destroy(XC_image_infer_handle *handle)
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

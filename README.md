@@ -40,26 +40,27 @@
 ```text
 .
 ├── include/
-│   ├── XC_image_infer.h         # 本库对外头文件
-│   ├── XC_common_datatype.h     # XC 基础类型定义
+│   ├── xc_dt.h                  # 本库对外头文件
+│   ├── xc_common_datatype.h     # XC 基础类型定义
 │   ├── xmedia_cl.h              # 依赖的 SDK 头文件
 │   └── xmedia_cl_common.h       # 依赖的 SDK 头文件
 ├── src/
-│   └── XC_image_infer.c         # 核心实现：输入搬运 + 推理 + 后处理
+│   └── xc_dt.cpp                # 核心实现：输入搬运 + 推理 + 后处理
 ├── examples/
 │   └── test_image_demo.c        # 最小调用示例
-├── lib/                         # make 后生成静态库
-├── bin/                         # make 后生成示例程序
-├── build/                       # make 后生成中间文件
-├── Makefile                     # 构建脚本
+├── sample/
+│   ├── test_image.c             # 更底层的调试示例
+│   └── README.md                # 调试示例说明
+├── lib/                         # 构建输出目录 / 依赖库目录
+├── CMakeLists.txt               # CMake 构建脚本
 └── README.md
 ```
 
 如果你是新手，最建议先看这 3 个文件：
 
-1. `include/XC_image_infer.h`
+1. `include/xc_dt.h`
 2. `examples/test_image_demo.c`
-3. `src/XC_image_infer.c`
+3. `src/xc_dt.cpp`
 
 ---
 
@@ -106,13 +107,13 @@
 
 当前工程里有一个容易让新手困惑的点，需要提前说明：
 
-- **头文件文件名**：`include/XC_image_infer.h`
+- **头文件文件名**：`include/xc_dt.h`
 - **对外函数/类型前缀**：`XC_`
 
 也就是说，你在代码里会写：
 
 ```c
-#include "XC_image_infer.h"
+#include "xc_dt.h"
 ```
 
 然后调用：
@@ -129,13 +130,14 @@ XC_image_infer_detect(...)
 在 SDK 环境下执行：
 
 ```bash
-make
+cmake -S . -B build
+cmake --build build
 ```
 
 生成物：
 
-- `lib/libXC_image_infer.a`
-- `bin/test_image_demo`
+- `build/` 下的 CMake 中间文件
+- `lib/` 下的构建输出（由 `CMakeLists.txt` 中的 `EXECUTABLE_OUTPUT_PATH` 指定）
 
 ### 说明
 

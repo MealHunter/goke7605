@@ -48,16 +48,14 @@ int main(int argc, char *argv[])
 
     printf("detect count: %u\n", result.count);
     for (i = 0; i < result.count; i++) {
-        printf("[%03u] cls=%d score=%.4f box=(%.1f, %.1f, %.1f, %.1f) stride=%u level=%u\n",
+        printf("[%03u] cls=%d score=%.4f box=(%.1f, %.1f, %.1f, %.1f)\n",
             i,
             result.boxes[i].class_id,
             result.boxes[i].score,
             result.boxes[i].x1,
             result.boxes[i].y1,
             result.boxes[i].x2,
-            result.boxes[i].y2,
-            result.boxes[i].stride,
-            result.boxes[i].level);
+            result.boxes[i].y2);
     }
 
     XC_image_infer_result_deinit(&result);
